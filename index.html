@@ -12,29 +12,171 @@
 *{box-sizing:border-box}
 body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto;background:#f4f4f4;transition:.3s}
 .dark{background:#0f0f0f;color:#eee}
-.hidden{display:none}
-
-header{
-background:white;padding:15px 30px;display:flex;justify-content:space-between;
-align-items:center;box-shadow:0 2px 12px rgba(0,0,0,0.08)
-}
-.dark header{background:#1a1a1a}
-
-button,input{
-padding:10px;border-radius:8px;border:none;margin:5px
-}
+button,input{padding:10px;border-radius:8px;border:none;margin:5px}
 button{background:#ff9900;color:white;cursor:pointer}
+header{background:white;padding:15px 30px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.dark header{background:#1a1a1a}
+#reader{height:100vh;background:#e5e5e5}
+.dark #reader{background:#000}
+.reader-bar{padding:12px 20px;background:white;display:flex;justify-content:space-between;align-items:center}
+.dark .reader-bar{background:#1a1a1a}
+#progressBar{height:5px;background:#ddd;width:100%}
+#progress{height:5px;background:#ff9900;width:0%}
+#flipbook{width:900px;height:600px;margin:20px auto;position:relative}
+.page{background:white;position:relative}
+.dark .page{background:#222}
+canvas{width:100%;height:100%}
+.highlight{position:absolute;background:rgba(255,255,0,.4);pointer-events:none}
+textarea{position:absolute;width:200px;height:100px;background:#fff8c4;border:1px solid #ccc;resize:none;padding:5px;font-size:12px}
+</style>
+</head>
+<body>
 
-#books{
-display:grid;grid-template-columns:repeat(auto-fill,180px);
-gap:25px;padding:30px
+<header>
+<h3>📚 LetBook</h3>
+<div>
+<input type="file" id="upload" accept="application/pdf">
+<button onclick="toggleDark()">🌙</button>
+</div>
+</header>
+
+<div id="reader">
+<div class="reader-bar">
+<div>
+<button onclick="zoomIn()">🔍+</button>
+<button onclick="zoomOut()">🔍-</button>
+<button onclick="toggleHighlight()">✍️ Marca-texto</button>
+<button onclick="addNote()">📝 Nota</button>
+</div>
+</div>
+<div id="progressBar"><div id="progress"></div></div>
+<div id="flipbook"></div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+
+let zoom=1.3;
+let highlightMode=false;
+let pdfDoc=null;
+
+function toggleDark(){document.body.classList.toggle("dark")}
+
+upload.addEventListener("change", e=>{
+const file=e.target.files[0];
+if(!file) return;
+
+const reader=new FileReader();
+reader.onload=function(){
+loadPDF(new Uint8Array(this.result));
+};
+reader.readAsArrayBuffer(file);
+});
+
+function loadPDF(data){
+
+if($('#flipbook').data('turn')) {
+$('#flipbook').turn('destroy');
 }
 
-.book{
-background:white;padding:15px;border-radius:14px;text-align:center;
-cursor:pointer;transition:.3s
+flipbook.innerHTML="";
+
+pdfjsLib.getDocument({data:data}).promise.then(pdf=>{
+pdfDoc=pdf;
+
+let renderPromises=[];
+
+for(let i=1;i<=pdf.numPages;i++){
+renderPromises.push(
+pdf.getPage(i).then(page=>{
+const viewport=page.getViewport({scale:zoom});
+const canvas=document.createElement("canvas");
+const context=canvas.getContext("2d");
+canvas.width=viewport.width;
+canvas.height=viewport.height;
+
+const div=document.createElement("div");
+div.className="page";
+div.appendChild(canvas);
+flipbook.appendChild(div);
+
+return page.render({canvasContext:context,viewport}).promise;
+})
+);
 }
-.dark .book{background:#1e1e1e}
+
+Promise.all(renderPromises).then(()=>{
+$('#flipbook').turn({
+width:900,
+height:600,
+autoCenter:true
+});
+
+updateProgress(1);
+
+$('#flipbook').bind('turned',function(e,page){
+updateProgress(page);
+});
+});
+
+});
+}
+
+function updateProgress(page){
+if(!pdfDoc) return;
+let percent=Math.round((page/pdfDoc.numPages)*100);
+document.getElementById("progress").style.width=percent+"%";
+}
+
+function zoomIn(){zoom+=0.2;reload()}
+function zoomOut(){zoom=Math.max(.5,zoom-.2);reload()}
+
+function reload(){
+if(!pdfDoc) return;
+const currentPage=$('#flipbook').data('turn')?$('#flipbook').turn('page'):1;
+const fileInput=upload.files[0];
+if(!fileInput) return;
+const reader=new FileReader();
+reader.onload=function(){
+loadPDF(new Uint8Array(this.result));
+setTimeout(()=>$('#flipbook').turn('page',currentPage),1500);
+};
+reader.readAsArrayBuffer(fileInput);
+}
+
+function toggleHighlight(){
+highlightMode=!highlightMode;
+}
+
+document.addEventListener("mousedown",e=>{
+if(!highlightMode)return;
+if(!e.target.closest(".page"))return;
+
+let rect=e.target.closest(".page").getBoundingClientRect();
+let highlight=document.createElement("div");
+highlight.className="highlight";
+highlight.style.left=(e.clientX-rect.left)+"px";
+highlight.style.top=(e.clientY-rect.top)+"px";
+highlight.style.width="120px";
+highlight.style.height="20px";
+e.target.closest(".page").appendChild(highlight);
+});
+
+function addNote(){
+if(!$('#flipbook').data('turn')) return;
+let page=$('#flipbook').turn('page');
+let pageDiv=document.querySelectorAll(".page")[page-1];
+let note=document.createElement("textarea");
+note.placeholder="Sua anotação...";
+note.style.left="60px";
+note.style.top="60px";
+pageDiv.appendChild(note);
+}
+</script>
+
+</body>
+</html>.dark .book{background:#1e1e1e}
 .book:hover{transform:translateY(-6px)}
 
 .book-cover{
